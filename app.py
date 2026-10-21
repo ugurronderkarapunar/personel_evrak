@@ -75,15 +75,17 @@ with tab_up:
             key = hashlib.md5(data).hexdigest()[:10]
             if st.session_state.get("parse_key") != key:
                 with st.spinner("Okunuyor..."):
-                    text, mode = extract_text(data, up.name.lower().endswith(".pdf"))
-                st.session_state.update(parse_key=key, text=text, mode=mode,
+                    text, mode, info = extract_text(data, up.name.lower().endswith(".pdf"))
+                st.session_state.update(parse_key=key, text=text, mode=mode, info=info,
                                         parsed=parse_document(text, people))
             res, text, mode = st.session_state.parsed, st.session_state.text, st.session_state.mode
             st.caption(f"Okuma yöntemi: {'doğrudan metin' if mode == 'metin' else 'OCR (tarama)'}")
             if not (res["start"] and res["end"]):
                 st.warning("Tarihlerin tamamı bulunamadı, lütfen kontrol edip düzelt.")
             if not text.strip():
-                st.error("Dosyadan hiç metin okunamadı. Daha net bir tarama dene.")
+                st.error("Dosyadan hiç metin okunamadı.")
+            with st.expander("Tanı bilgisi"):
+                st.write(st.session_state.get("info", []))
 
             ids = [p["id"] for p in people]
             idx = ids.index(res["person_id"]) if res["person_id"] in ids else 0

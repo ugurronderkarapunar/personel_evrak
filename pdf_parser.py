@@ -47,30 +47,52 @@ DOC_HINTS = [
 
 
 def extract_text(data: bytes, is_pdf: bool = True):
-    """(metin, yöntem) döner. Metin yoksa OCR'a düşer."""
-    from PIL import Image
+    """(metin, yöntem, tanı_bilgisi) döner. Metin katmanı yoksa OCR'a düşer."""
+    from PIL import Image, ImageOps
     import pytesseract
 
+    info = []
+
     def ocr(img):
-        try:
-            return pytesseract.image_to_string(img, lang="tur+eng")
-        except pytesseract.TesseractError:
-            return pytesseract.image_to_string(img, lang="eng")
+        img = ImageOps.autocontrast(ImageOps.grayscale(img))
+        best = ""
+        for psm in (3, 6):
+            cfg = f"--oem 1 --psm {psm}"
+            try:
+                t = pytesseract.image_to_string(img, lang="tur+eng", config=cfg)
+            except pytesseract.TesseractNotFoundError:
+                info.append("Tesseract kurulu değil (packages.txt repo KÖKÜNDE olmalı).")
+                return ""
+            except pytesseract.TesseractError as e:
+                info.append(f"tur dil paketi sorunu, eng'e düşüldü: {str(e)[:120]}")
+                try:
+                    t = pytesseract.image_to_string(img, lang="eng", config=cfg)
+                except Exception as e2:
+                    info.append(f"OCR hatası: {str(e2)[:120]}")
+                    return ""
+            if len(t.strip()) > len(best.strip()):
+                best = t
+        return best
 
     if not is_pdf:
-        return ocr(Image.open(io.BytesIO(data))), "ocr"
+        img = Image.open(io.BytesIO(data))
+        img = ImageOps.exif_transpose(img)
+        return ocr(img), "ocr", info
 
     import fitz  # PyMuPDF
     doc = fitz.open(stream=data, filetype="pdf")
     pages = list(doc)[:5]
     text = "\n".join(p.get_text() for p in pages)
+    info.append(f"Sayfa: {len(doc)}, metin katmanı: {len(text.strip())} karakter")
     if len(text.strip()) >= 40:
-        return text, "metin"
+        return text, "metin", info
     out = []
     for p in pages:
-        pix = p.get_pixmap(dpi=200)
+        pix = p.get_pixmap(dpi=300)
         out.append(ocr(Image.open(io.BytesIO(pix.tobytes("png")))))
-    return "\n".join(out), "ocr"
+    text = "\n".join(out)
+    info.append(f"OCR sonucu: {len(text.strip())} karakter")
+    return text, "ocr", info
 
 
 def find_dates(s: str):
